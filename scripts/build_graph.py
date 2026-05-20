@@ -32,26 +32,16 @@ WIKILINK_RE = re.compile(r"\[\[([^\]|#]+?)(?:\|[^\]]+)?\]\]")
 FROM_BLOCK_HEADER_RE = re.compile(r"\*\*From\s+\[\[([^\]]+)\]\]\s*:\*\*")
 WIKILINK_LAB_RE = re.compile(r"\[\[([^\]|#]+?)(?:\|[^\]]+)?\]\]")
 
-# Hand-picked color palette for the labs that matter most to the Walsh + Christoffel labs.
-# Other labs fall back to a muted scheme via `OTHER_LAB_COLORS`.
+# Only the two home labs get distinguishing colors. Everyone else is default gray.
 PRIMARY_LAB_COLORS: dict[str, str] = {
     "Walsh-lab-UNC": "#4B9CD3",          # Carolina blue (home lab)
-    "Christoffel-lab-UNC": "#FF8C42",    # orange (sister lab)
-    "Malenka-lab-Stanford": "#27AE60",   # green — Walsh postdoc home
-    "Heifets-lab-Stanford": "#8E44AD",   # purple — recent psychedelic/opioid cluster
-    "Russo-lab-Mount-Sinai": "#C0392B",  # red — Walsh PhD home (Russo)
-    "Han-lab-Mount-Sinai": "#E74C3C",    # light red — Walsh PhD PI
-    "Nestler-lab-Mount-Sinai": "#F39C12", # amber — Walsh PhD adjacent
-    "Halpern-lab-Stanford": "#16A085",   # teal — Christoffel postdoc PI
-    "Olson-lab-UC-Davis": "#1ABC9C",     # turquoise — psychoplastogen chem
-    "Stuber-lab-UW": "#34495E",          # slate — whole-brain opioid
-    "Roth-lab-UNC": "#2C3E50",           # dark blue — UNC psychedelic pharm
+    "Christoffel-lab-UNC": "#27AE60",    # green (sister lab)
 }
 
-OTHER_LAB_COLOR = "#7F8C8D"   # gray-blue for any lab not in PRIMARY_LAB_COLORS
-PI_NO_LAB_COLOR = "#FFE600"   # yellow accent for PIs without a wiki lab page
+OTHER_LAB_COLOR = "#BDC3C7"   # light gray — any other lab
+PI_NO_LAB_COLOR = "#BDC3C7"   # light gray — PIs without a wiki lab page
 DEFAULT_COLOR = "#BDC3C7"     # light gray for plain authors
-MISSING_PAGE_COLOR = "#34495E80"  # translucent slate for stub-only references (no page yet)
+MISSING_PAGE_COLOR = "#BDC3C780"  # translucent gray for stub-only references (no page yet)
 
 
 def parse_frontmatter(text: str) -> tuple[dict[str, Any], str]:
@@ -102,17 +92,10 @@ def parse_coauthor_blocks(body: str) -> list[tuple[str, list[str]]]:
 
 def classify_node_color(fm: dict[str, Any]) -> tuple[str, str]:
     """Return (color_hex, category_label) for a node based on its frontmatter."""
-    tags = fm.get("tags", []) or []
-    tags = [str(t).lower() for t in tags] if isinstance(tags, list) else []
-
     lab_basename = strip_lab_wikilink(fm.get("lab", ""))
     if lab_basename in PRIMARY_LAB_COLORS:
         return PRIMARY_LAB_COLORS[lab_basename], lab_basename
-    if lab_basename:
-        return OTHER_LAB_COLOR, "Other lab"
-    if "pi" in tags:
-        return PI_NO_LAB_COLOR, "Other PI"
-    return DEFAULT_COLOR, "Author"
+    return DEFAULT_COLOR, "Other"
 
 
 def build_graph_data() -> dict[str, Any]:
@@ -193,9 +176,7 @@ def build_graph_data() -> dict[str, Any]:
         },
         "palette": {
             **PRIMARY_LAB_COLORS,
-            "Other lab": OTHER_LAB_COLOR,
-            "Other PI": PI_NO_LAB_COLOR,
-            "Author": DEFAULT_COLOR,
+            "Other": DEFAULT_COLOR,
             "Missing page": MISSING_PAGE_COLOR,
         },
     }
@@ -240,7 +221,40 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     width: 260px;
     max-height: calc(100vh - 32px);
     overflow-y: auto;
+    transition: width 0.18s ease, padding 0.18s ease, max-height 0.18s ease;
   }
+  .panel.left.collapsed {
+    width: 44px;
+    height: 44px;
+    max-height: 44px;
+    padding: 0;
+    overflow: hidden;
+    cursor: pointer;
+  }
+  .panel.left.collapsed > *:not(.panel-toggle) { display: none; }
+  .panel-toggle {
+    position: absolute;
+    top: 8px; right: 8px;
+    width: 28px; height: 28px;
+    border: none;
+    background: transparent;
+    color: var(--text-dim);
+    cursor: pointer;
+    font-size: 16px;
+    padding: 0;
+    line-height: 1;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .panel-toggle:hover { background: #ffffff10; color: var(--text); }
+  .panel.left.collapsed .panel-toggle {
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    right: auto;
+  }
+  .panel.left h1 { padding-right: 32px; }
   .panel.right {
     top: 16px; right: 16px;
     width: 280px;
@@ -249,6 +263,10 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     display: none;
   }
   .panel.right.visible { display: block; }
+  @media (max-width: 700px) {
+    .panel.right { width: calc(100vw - 32px); }
+    .help { display: none; }
+  }
   h1 {
     margin: 0 0 2px 0;
     font-size: 15px;
@@ -401,7 +419,8 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 <body>
 <div id="graph"></div>
 
-<aside class="panel left">
+<aside class="panel left" id="settings-panel">
+  <button class="panel-toggle" id="settings-toggle" title="Toggle settings" aria-label="Toggle settings">☰</button>
   <h1>Walsh + Christoffel</h1>
   <div class="subtitle">Co-authorship network</div>
   <div class="stats" id="stats"></div>
@@ -429,6 +448,11 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     <label>Link dist</label>
     <input id="f-dist" type="range" min="20" max="300" value="80" />
     <span class="value" id="f-dist-v">80</span>
+  </div>
+  <div class="slider-row">
+    <label>Name fade</label>
+    <input id="f-label" type="range" min="0" max="500" value="160" />
+    <span class="value" id="f-label-v">1.60</span>
   </div>
 
   <div class="section-title">Lab / category</div>
@@ -486,6 +510,7 @@ let searchTerm = "";
 let hoveredNode = null;
 let highlightedIds = new Set();
 let selectedNode = null;
+let labelThreshold = 1.6;
 let neighborsByNode = new Map();
 DATA.nodes.forEach(n => neighborsByNode.set(n.id, new Set()));
 DATA.links.forEach(l => {
@@ -566,7 +591,7 @@ const Graph = ForceGraph()
     // Label — show when zoomed in, or when this node is highlighted
     const showLabel = isHovered || isSelected ||
                       (highlightedIds.size > 0 && highlightedIds.has(node.id)) ||
-                      globalScale > 1.6;
+                      globalScale > labelThreshold;
     if (showLabel && !isDimmed) {
       const fontSize = Math.max(9, 11 / globalScale);
       ctx.font = `${fontSize}px -apple-system, sans-serif`;
@@ -635,12 +660,14 @@ const f = {
   repel:  document.getElementById("f-repel"),
   link:   document.getElementById("f-link"),
   dist:   document.getElementById("f-dist"),
+  label:  document.getElementById("f-label"),
 };
 const fv = {
   center: document.getElementById("f-center-v"),
   repel:  document.getElementById("f-repel-v"),
   link:   document.getElementById("f-link-v"),
   dist:   document.getElementById("f-dist-v"),
+  label:  document.getElementById("f-label-v"),
 };
 f.center.addEventListener("input", e => {
   const v = +e.target.value / 100;
@@ -665,6 +692,12 @@ f.dist.addEventListener("input", e => {
   fv.dist.textContent = v;
   Graph.d3Force("link").distance(v);
   Graph.d3ReheatSimulation();
+});
+f.label.addEventListener("input", e => {
+  const v = +e.target.value / 100;
+  fv.label.textContent = v.toFixed(2);
+  labelThreshold = v;
+  Graph.refresh();
 });
 
 // --- Search ---
@@ -745,6 +778,28 @@ function escapeHtml(s) {
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
   }[c]));
 }
+
+// --- Settings panel collapse / expand ---
+const settingsPanel = document.getElementById("settings-panel");
+const settingsToggle = document.getElementById("settings-toggle");
+function setCollapsed(collapsed) {
+  if (collapsed) {
+    settingsPanel.classList.add("collapsed");
+    settingsToggle.textContent = "☰";
+  } else {
+    settingsPanel.classList.remove("collapsed");
+    settingsToggle.textContent = "✕";
+  }
+}
+settingsToggle.addEventListener("click", e => {
+  e.stopPropagation();
+  setCollapsed(!settingsPanel.classList.contains("collapsed"));
+});
+settingsPanel.addEventListener("click", e => {
+  if (settingsPanel.classList.contains("collapsed")) setCollapsed(false);
+});
+// Default collapsed on narrow viewports (mobile/portrait tablet).
+setCollapsed(window.innerWidth < 700);
 
 // Resize handler
 window.addEventListener("resize", () => Graph.width(window.innerWidth).height(window.innerHeight));
