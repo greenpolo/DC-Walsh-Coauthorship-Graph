@@ -437,7 +437,7 @@ const Graph = ForceGraph()
       // Quadratic scaling with no floor. Cap + multiplier scale with
       // viewport width so phone screens get proportionally smaller text.
       const vw = Math.min(1, window.innerWidth / 1200);
-      const screenPx = Math.min(80 * vw, Math.pow(globalScale, 2) * 4 * vw);
+      const screenPx = Math.min(16 * vw, Math.pow(globalScale, 2) * 4 * vw);
       const fontSize = screenPx / globalScale;
       ctx.font = `${fontSize}px -apple-system, sans-serif`;
       ctx.textAlign = "center";
