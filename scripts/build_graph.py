@@ -641,8 +641,9 @@ const Graph = ForceGraph()
                       (highlightedIds.size > 0 && highlightedIds.has(node.id)) ||
                       globalScale > labelThreshold;
     if (showLabel && !isDimmed) {
-      // Very aggressive zoom scaling: pow(zoom, 1.8) * 10, clamped 12..100 screen px.
-      const screenPx = Math.max(12, Math.min(100, Math.pow(globalScale, 1.8) * 10));
+      // Quadratic scaling with no floor: shrinks rapidly on zoom-out,
+      // grows rapidly on zoom-in. Capped at 80 screen px.
+      const screenPx = Math.min(80, Math.pow(globalScale, 2) * 4);
       const fontSize = screenPx / globalScale;
       ctx.font = `${fontSize}px -apple-system, sans-serif`;
       ctx.textAlign = "center";
