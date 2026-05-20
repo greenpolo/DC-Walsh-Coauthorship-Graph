@@ -21,8 +21,12 @@ obsidian command id=webpage-html-export:export-html-vault
 
 # 3. Wait for the dir to populate, then swap into the GH Pages repo
 cp -r C:/WalshLab/webpage-export-output/. C:/WalshLab/DC-Walsh-Coauthorship-Graph/
-cp C:/WalshLab/DC-Walsh-Coauthorship-Graph/jessica-j-walsh.html C:/WalshLab/DC-Walsh-Coauthorship-Graph/index.html
 cd C:/WalshLab/DC-Walsh-Coauthorship-Graph
+
+# 4. Build the graph-only landing page (overrides index.html)
+python make_landing.py
+
+# 5. Commit + push
 git add -A && git commit -m "refresh: re-export from wiki" && git push
 ```
 
@@ -36,8 +40,10 @@ If a person should not have their data on a public site, remove their `.html` fr
 
 ## Structure
 
-- `*.html` — one per person page (slugified-lowercase basenames; `index.html` is a copy of Jess's page).
+- `index.html` — graph-only landing (Jess's page with sidebar/document/outline hidden via injected CSS, global graph auto-triggered on load via injected JS).
+- `*.html` — one per person page (slugified-lowercase basenames). Includes a clean `jessica-j-walsh.html` (the canonical PI page; sidebar + content visible).
 - `site-lib/` — fonts, styles, scripts (including the WASM graph renderer), search index, RSS, metadata.
+- `make_landing.py` — post-export script that rebuilds `index.html` from `jessica-j-walsh.html` with the graph-only overrides.
 - `.gitignore`, `README.md`, `.git/`
 
 ~13 MB total, ~280 files.
