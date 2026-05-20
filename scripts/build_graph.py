@@ -511,6 +511,7 @@ let hoveredNode = null;
 let highlightedIds = new Set();
 let selectedNode = null;
 let labelThreshold = 1.6;
+let suppressClick = false;
 let neighborsByNode = new Map();
 DATA.nodes.forEach(n => neighborsByNode.set(n.id, new Set()));
 DATA.links.forEach(l => {
@@ -593,7 +594,9 @@ const Graph = ForceGraph()
                       (highlightedIds.size > 0 && highlightedIds.has(node.id)) ||
                       globalScale > labelThreshold;
     if (showLabel && !isDimmed) {
-      const fontSize = Math.max(9, 11 / globalScale);
+      // Scale label with zoom: 5px nominal world-size; clamp screen-space to 8..28px.
+      const screenPx = Math.max(8, Math.min(28, 5 * globalScale));
+      const fontSize = screenPx / globalScale;
       ctx.font = `${fontSize}px -apple-system, sans-serif`;
       ctx.textAlign = "center";
       ctx.textBaseline = "top";
@@ -622,6 +625,7 @@ const Graph = ForceGraph()
     document.body.style.cursor = node ? "pointer" : null;
   })
   .onNodeClick(node => {
+    if (suppressClick) { suppressClick = false; return; }
     if (selectedNode && selectedNode.id === node.id) {
       // Deselect + unfreeze
       delete selectedNode.fx; delete selectedNode.fy;
@@ -641,6 +645,7 @@ const Graph = ForceGraph()
     Graph.d3ReheatSimulation();
   })
   .onBackgroundClick(() => {
+    if (suppressClick) { suppressClick = false; return; }
     if (selectedNode) {
       delete selectedNode.fx; delete selectedNode.fy;
       selectedNode = null;
@@ -648,6 +653,25 @@ const Graph = ForceGraph()
     }
     highlightedIds = new Set();
   });
+
+// --- Suppress click-after-pan ---
+// Track pointer movement between down and up; if the gesture traveled
+// more than DRAG_THRESHOLD pixels (i.e. a pan/drag), discard the click.
+const DRAG_THRESHOLD = 8;
+let pointerDownPos = null;
+const graphRoot = document.getElementById("graph");
+graphRoot.addEventListener("pointerdown", e => {
+  pointerDownPos = { x: e.clientX, y: e.clientY };
+  suppressClick = false;
+}, true);
+graphRoot.addEventListener("pointerup", e => {
+  if (pointerDownPos) {
+    const dx = e.clientX - pointerDownPos.x;
+    const dy = e.clientY - pointerDownPos.y;
+    if (Math.hypot(dx, dy) > DRAG_THRESHOLD) suppressClick = true;
+  }
+  pointerDownPos = null;
+}, true);
 
 // --- Force tuning sliders ---
 Graph.d3Force("charge").strength(-150);
