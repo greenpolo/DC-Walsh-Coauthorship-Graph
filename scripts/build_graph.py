@@ -726,7 +726,10 @@ graphRoot.addEventListener("pointerup", e => {
 // --- Force tuning sliders ---
 Graph.d3Force("charge").strength(-150);
 Graph.d3Force("link").distance(80).strength(0.4);
-Graph.d3Force("center", d3.forceCenter().strength(0.03));
+// forceCenter only translates the centroid — use forceX/forceY for real radial pull
+Graph.d3Force("center", null);
+Graph.d3Force("x", d3.forceX(0).strength(0.03));
+Graph.d3Force("y", d3.forceY(0).strength(0.03));
 Graph.d3Force("collision", d3.forceCollide(n => nodeRadius(n) + 1));
 
 const f = {
@@ -746,7 +749,8 @@ const fv = {
 f.center.addEventListener("input", e => {
   const v = +e.target.value / 100;
   fv.center.textContent = v.toFixed(2);
-  Graph.d3Force("center").strength(v);
+  Graph.d3Force("x").strength(v);
+  Graph.d3Force("y").strength(v);
   Graph.d3ReheatSimulation();
 });
 f.repel.addEventListener("input", e => {
