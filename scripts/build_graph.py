@@ -132,6 +132,23 @@ def build_graph_data() -> dict[str, Any]:
     home_lab_members = {b for b, info in people.items() if info["lab"] in PRIMARY_LAB_COLORS}
     kept_sources = {s for s, authors in source_authors.items() if authors & home_lab_members}
 
+    # Iteratively prune outlier sources: a paper survives only if at least 2 of
+    # its authors are "bridges" (appear in ≥2 other kept sources). This drops
+    # single-lab-member-led papers whose other authors don't recur anywhere
+    # else in the graph (e.g. one-off collaborations on an unrelated topic).
+    while True:
+        author_kept_count: dict[str, int] = {}
+        for s in kept_sources:
+            for a in source_authors[s]:
+                author_kept_count[a] = author_kept_count.get(a, 0) + 1
+        new_kept = {
+            s for s in kept_sources
+            if sum(1 for a in source_authors[s] if author_kept_count[a] >= 2) >= 2
+        }
+        if new_kept == kept_sources:
+            break
+        kept_sources = new_kept
+
     # Rebuild edges from kept sources only, and tally per-author paper counts.
     edge_weights: dict[tuple[str, str], int] = {}
     n_papers_per: dict[str, int] = {}
@@ -641,8 +658,8 @@ const Graph = ForceGraph()
                       (highlightedIds.size > 0 && highlightedIds.has(node.id)) ||
                       globalScale > labelThreshold;
     if (showLabel && !isDimmed) {
-      // Aggressive zoom scaling: superlinear growth, clamped 8..72 screen px.
-      const screenPx = Math.max(8, Math.min(72, Math.pow(globalScale, 1.5) * 7));
+      // Very aggressive zoom scaling: pow(zoom, 1.8) * 10, clamped 12..100 screen px.
+      const screenPx = Math.max(12, Math.min(100, Math.pow(globalScale, 1.8) * 10));
       const fontSize = screenPx / globalScale;
       ctx.font = `${fontSize}px -apple-system, sans-serif`;
       ctx.textAlign = "center";
