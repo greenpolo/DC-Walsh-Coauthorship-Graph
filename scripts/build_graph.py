@@ -161,12 +161,9 @@ def build_graph_data() -> dict[str, Any]:
     for (a, b), w in edge_weights.items():
         papers_shared = max(1, (w + 1) // 2)
         cy_edges.append({
-            "data": {
-                "id": f"{a}__{b}",
-                "source": a,
-                "target": b,
-                "weight": papers_shared,
-            }
+            "source": a,
+            "target": b,
+            "weight": papers_shared,
         })
 
     # Stub nodes for wikilinks referenced but missing a page.
@@ -185,10 +182,10 @@ def build_graph_data() -> dict[str, Any]:
                 "category": "Missing page",
             }
 
-    cy_nodes = [{"data": n} for n in sorted(nodes.values(), key=lambda d: d["label"])]
+    cy_nodes = sorted(nodes.values(), key=lambda d: d["label"])
     return {
         "nodes": cy_nodes,
-        "edges": cy_edges,
+        "links": cy_edges,
         "stats": {
             "n_nodes": len(cy_nodes),
             "n_edges": len(cy_edges),
@@ -214,54 +211,58 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   :root {
     color-scheme: dark;
     --bg: #1a1a1a;
-    --panel: #242424;
+    --panel: #242424cc;
     --text: #e7e7e7;
     --text-dim: #9a9a9a;
     --border: #383838;
     --accent: #4B9CD3;
   }
   * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; }
   body {
-    margin: 0;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
     background: var(--bg);
     color: var(--text);
-    overflow: hidden;
   }
-  #app {
-    display: grid;
-    grid-template-columns: 280px 1fr 320px;
-    height: 100vh;
-  }
+  #graph { position: absolute; inset: 0; }
   .panel {
+    position: absolute;
     background: var(--panel);
-    border-right: 1px solid var(--border);
-    overflow-y: auto;
-    padding: 16px;
+    backdrop-filter: blur(8px);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px;
     font-size: 13px;
+    z-index: 10;
+  }
+  .panel.left {
+    top: 16px; left: 16px;
+    width: 260px;
+    max-height: calc(100vh - 32px);
+    overflow-y: auto;
   }
   .panel.right {
-    border-right: none;
-    border-left: 1px solid var(--border);
+    top: 16px; right: 16px;
+    width: 280px;
+    max-height: calc(100vh - 32px);
+    overflow-y: auto;
+    display: none;
   }
+  .panel.right.visible { display: block; }
   h1 {
-    margin: 0 0 4px 0;
-    font-size: 17px;
+    margin: 0 0 2px 0;
+    font-size: 15px;
     font-weight: 600;
     letter-spacing: 0.2px;
   }
-  .subtitle {
-    color: var(--text-dim);
-    font-size: 12px;
-    margin-bottom: 16px;
-  }
+  .subtitle { color: var(--text-dim); font-size: 11px; margin-bottom: 12px; }
   .stats {
     color: var(--text-dim);
     font-size: 11px;
     line-height: 1.5;
-    margin-bottom: 16px;
-    padding-bottom: 12px;
+    padding-bottom: 10px;
     border-bottom: 1px solid var(--border);
+    margin-bottom: 10px;
   }
   .stats b { color: var(--text); }
   .section-title {
@@ -269,8 +270,8 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     letter-spacing: 0.08em;
     font-size: 10px;
     color: var(--text-dim);
-    margin-top: 18px;
-    margin-bottom: 8px;
+    margin-top: 14px;
+    margin-bottom: 6px;
     font-weight: 600;
   }
   input[type="text"] {
@@ -278,152 +279,192 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     background: #181818;
     border: 1px solid var(--border);
     color: var(--text);
-    padding: 6px 10px;
+    padding: 5px 8px;
     border-radius: 4px;
-    font-size: 13px;
+    font-size: 12px;
     outline: none;
   }
   input[type="text"]:focus { border-color: var(--accent); }
+  .slider-row {
+    display: grid;
+    grid-template-columns: 80px 1fr 40px;
+    gap: 6px;
+    align-items: center;
+    margin-bottom: 4px;
+    font-size: 11px;
+  }
+  .slider-row label { color: var(--text-dim); }
+  .slider-row .value { color: var(--text); text-align: right; font-variant-numeric: tabular-nums; }
+  input[type="range"] {
+    width: 100%;
+    height: 4px;
+    -webkit-appearance: none;
+    appearance: none;
+    background: #181818;
+    border-radius: 2px;
+    outline: none;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 12px; height: 12px;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+  }
+  input[type="range"]::-moz-range-thumb {
+    width: 12px; height: 12px;
+    border: none;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+  }
   #legend { list-style: none; padding: 0; margin: 0; }
   #legend li {
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 5px 6px;
+    padding: 4px 6px;
     cursor: pointer;
     border-radius: 3px;
     user-select: none;
-    margin-bottom: 1px;
   }
-  #legend li:hover { background: #2e2e2e; }
+  #legend li:hover { background: #ffffff10; }
   #legend li.disabled { opacity: 0.3; }
   #legend li .swatch {
-    width: 12px; height: 12px; border-radius: 50%;
+    width: 11px; height: 11px; border-radius: 50%;
     border: 1px solid #00000060;
     flex-shrink: 0;
   }
-  #legend li .label { flex: 1; font-size: 12px; }
-  #legend li .count { color: var(--text-dim); font-size: 11px; }
-  #cy { width: 100%; height: 100vh; background: var(--bg); }
-  .detail-empty {
-    color: var(--text-dim);
-    font-size: 12px;
-    line-height: 1.5;
-  }
-  .detail h2 {
-    margin: 0 0 4px 0;
-    font-size: 16px;
-    font-weight: 600;
-  }
-  .detail .role { color: var(--text-dim); font-size: 12px; margin-bottom: 12px; }
+  #legend li .label { flex: 1; font-size: 11px; }
+  #legend li .count { color: var(--text-dim); font-size: 10px; }
+  .detail h2 { margin: 0 0 4px 0; font-size: 15px; font-weight: 600; }
+  .detail .lab-row { color: var(--text-dim); font-size: 11px; margin-bottom: 10px; }
   .detail .field {
-    display: flex;
-    gap: 8px;
-    margin-bottom: 6px;
-    font-size: 12px;
-    line-height: 1.4;
+    display: flex; gap: 8px;
+    margin-bottom: 4px; font-size: 12px;
   }
-  .detail .field .key {
-    color: var(--text-dim);
-    flex-shrink: 0;
-    min-width: 80px;
-  }
-  .detail .field .val { color: var(--text); }
+  .detail .field .key { color: var(--text-dim); min-width: 90px; }
   .detail .coauthors-list {
-    margin-top: 14px;
-    padding-top: 12px;
+    margin-top: 12px;
+    padding-top: 10px;
     border-top: 1px solid var(--border);
   }
-  .detail .coauthors-list .item {
+  .coauthor-item {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 4px 6px;
-    margin-bottom: 1px;
+    padding: 3px 6px;
     border-radius: 3px;
-    font-size: 12px;
+    font-size: 11px;
     cursor: pointer;
   }
-  .detail .coauthors-list .item:hover { background: #2e2e2e; }
-  .detail .coauthors-list .item .papers {
+  .coauthor-item:hover { background: #ffffff10; }
+  .coauthor-item .papers { color: var(--text-dim); font-size: 10px; }
+  .coauthor-item .swatch {
+    width: 7px; height: 7px; border-radius: 50%;
+    display: inline-block; margin-right: 5px; vertical-align: middle;
+  }
+  .help {
+    position: absolute;
+    bottom: 12px; left: 16px;
     color: var(--text-dim);
     font-size: 10px;
-  }
-  .detail .swatch {
-    width: 8px; height: 8px; border-radius: 50%;
-    display: inline-block; margin-right: 6px;
-    vertical-align: middle;
+    z-index: 10;
+    pointer-events: none;
+    line-height: 1.5;
   }
   .credits {
-    position: fixed;
-    bottom: 8px; right: 336px;
+    position: absolute;
+    bottom: 12px; right: 16px;
     color: var(--text-dim);
     font-size: 10px;
+    z-index: 10;
     pointer-events: none;
   }
   .credits a { color: var(--accent); text-decoration: none; }
+  .close-btn {
+    position: absolute;
+    top: 10px; right: 10px;
+    width: 20px; height: 20px;
+    border: none;
+    background: transparent;
+    color: var(--text-dim);
+    cursor: pointer;
+    font-size: 16px;
+    padding: 0;
+    line-height: 1;
+  }
+  .close-btn:hover { color: var(--text); }
 </style>
 </head>
 <body>
-<div id="app">
-  <aside class="panel left">
-    <h1>Walsh + Christoffel</h1>
-    <div class="subtitle">Co-authorship network</div>
-    <div class="stats" id="stats"></div>
+<div id="graph"></div>
 
-    <div class="section-title">Search</div>
-    <input id="search" type="text" placeholder="Filter by name…" autocomplete="off" />
+<aside class="panel left">
+  <h1>Walsh + Christoffel</h1>
+  <div class="subtitle">Co-authorship network</div>
+  <div class="stats" id="stats"></div>
 
-    <div class="section-title">Lab / category</div>
-    <ul id="legend"></ul>
-  </aside>
+  <div class="section-title">Search</div>
+  <input id="search" type="text" placeholder="Filter by name…" autocomplete="off" />
 
-  <main>
-    <div id="cy"></div>
-  </main>
+  <div class="section-title">Forces</div>
+  <div class="slider-row">
+    <label>Center</label>
+    <input id="f-center" type="range" min="0" max="100" value="3" />
+    <span class="value" id="f-center-v">0.03</span>
+  </div>
+  <div class="slider-row">
+    <label>Repel</label>
+    <input id="f-repel" type="range" min="0" max="500" value="150" />
+    <span class="value" id="f-repel-v">150</span>
+  </div>
+  <div class="slider-row">
+    <label>Link force</label>
+    <input id="f-link" type="range" min="0" max="100" value="40" />
+    <span class="value" id="f-link-v">0.40</span>
+  </div>
+  <div class="slider-row">
+    <label>Link dist</label>
+    <input id="f-dist" type="range" min="20" max="300" value="80" />
+    <span class="value" id="f-dist-v">80</span>
+  </div>
 
-  <aside class="panel right" id="detail-panel">
-    <div class="detail-empty" id="detail-empty">
-      Click a node to see details. Hover any node to lift it. Drag to pan, scroll to zoom.
-      <br /><br />
-      Edges are weighted by number of co-authored papers in the wiki. Node size scales with
-      the per-person paper count.
-    </div>
-    <div class="detail" id="detail" style="display: none;"></div>
-  </aside>
+  <div class="section-title">Lab / category</div>
+  <ul id="legend"></ul>
+</aside>
+
+<aside class="panel right" id="detail-panel">
+  <button class="close-btn" id="detail-close">✕</button>
+  <div class="detail" id="detail"></div>
+</aside>
+
+<div class="help">
+  drag a node · scroll to zoom · click for details · hover to focus
 </div>
-
 <div class="credits">
-  Built from <a href="https://github.com/karpathy" target="_blank">Karpathy</a>-pattern LLM wiki ·
-  rendered with <a href="https://js.cytoscape.org" target="_blank">Cytoscape.js</a>
+  d3-force + <a href="https://github.com/vasturiano/force-graph" target="_blank">force-graph</a>
 </div>
 
-<script src="https://unpkg.com/cytoscape@3.30.4/dist/cytoscape.min.js"></script>
-<script src="https://unpkg.com/layout-base@2.0.1/layout-base.js"></script>
-<script src="https://unpkg.com/cose-base@2.2.0/cose-base.js"></script>
-<script src="https://unpkg.com/cytoscape-fcose@2.2.0/cytoscape-fcose.js"></script>
+<script src="https://unpkg.com/d3@7/dist/d3.min.js"></script>
+<script src="https://unpkg.com/force-graph@1.43.5/dist/force-graph.min.js"></script>
 
 <script>
 const DATA = __DATA_PLACEHOLDER__;
 const PALETTE = DATA.palette;
 
-// --- Build category counts for the legend (preserve PRIMARY_LAB_COLORS order). ---
-const labOrder = Object.keys(PALETTE);
-const counts = {};
-DATA.nodes.forEach(n => {
-  const cat = n.data.category;
-  counts[cat] = (counts[cat] || 0) + 1;
-});
-
-// --- Stats line ---
-const statsEl = document.getElementById("stats");
-statsEl.innerHTML =
+// --- Stats ---
+document.getElementById("stats").innerHTML =
   `<b>${DATA.stats.n_nodes}</b> people · <b>${DATA.stats.n_edges}</b> co-authorship edges<br />` +
   `across <b>${DATA.stats.n_sources}</b> ingested sources`;
 
 // --- Legend ---
+const counts = {};
+DATA.nodes.forEach(n => { counts[n.category] = (counts[n.category] || 0) + 1; });
 const legendEl = document.getElementById("legend");
-const visibleCats = new Set(labOrder);
+const labOrder = Object.keys(PALETTE);
+const hiddenCats = new Set();
 labOrder.forEach(cat => {
   const c = counts[cat] || 0;
   if (c === 0) return;
@@ -433,191 +474,268 @@ labOrder.forEach(cat => {
                   <span class="label">${cat}</span>
                   <span class="count">${c}</span>`;
   li.addEventListener("click", () => {
-    if (visibleCats.has(cat)) {
-      visibleCats.delete(cat);
-      li.classList.add("disabled");
-    } else {
-      visibleCats.add(cat);
-      li.classList.remove("disabled");
-    }
-    applyFilters();
+    if (hiddenCats.has(cat)) { hiddenCats.delete(cat); li.classList.remove("disabled"); }
+    else { hiddenCats.add(cat); li.classList.add("disabled"); }
+    Graph.refresh();
   });
   legendEl.appendChild(li);
 });
 
-// --- Cytoscape init ---
-const cy = cytoscape({
-  container: document.getElementById("cy"),
-  elements: DATA.nodes.concat(DATA.edges),
-  wheelSensitivity: 0.2,
-  minZoom: 0.05,
-  maxZoom: 4,
-  style: [
-    {
-      selector: "node",
-      style: {
-        "background-color": "data(color)",
-        "label": "data(label)",
-        "font-size": 9,
-        "color": "#cccccc",
-        "text-valign": "bottom",
-        "text-margin-y": 4,
-        "text-outline-color": "#1a1a1a",
-        "text-outline-width": 2,
-        "width": ele => 8 + Math.sqrt(ele.data("n_papers") || 0) * 6,
-        "height": ele => 8 + Math.sqrt(ele.data("n_papers") || 0) * 6,
-        "border-color": "#00000040",
-        "border-width": 1,
-        "overlay-padding": 6,
-      }
-    },
-    {
-      selector: "node.dimmed",
-      style: { "opacity": 0.08, "text-opacity": 0 }
-    },
-    {
-      selector: "node.highlighted",
-      style: {
-        "border-color": "#ffffff",
-        "border-width": 2,
-        "z-index": 100,
-        "font-weight": 700,
-        "font-size": 11,
-        "color": "#ffffff",
-      }
-    },
-    {
-      selector: "node.neighbor",
-      style: { "font-size": 11, "color": "#ffffff" }
-    },
-    {
-      selector: "edge",
-      style: {
-        "width": ele => Math.min(8, 0.5 + (ele.data("weight") || 1) * 0.9),
-        "line-color": "#555",
-        "curve-style": "haystack",
-        "haystack-radius": 0.5,
-        "opacity": 0.35,
-      }
-    },
-    {
-      selector: "edge.dimmed",
-      style: { "opacity": 0.05 }
-    },
-    {
-      selector: "edge.highlighted",
-      style: { "line-color": "#ffffff", "opacity": 0.9, "z-index": 50 }
-    },
-  ],
-  layout: {
-    name: "fcose",
-    quality: "default",
-    randomize: true,
-    animate: false,
-    nodeRepulsion: 6000,
-    idealEdgeLength: 70,
-    edgeElasticity: 0.45,
-    gravity: 0.25,
-    numIter: 2500,
-    tile: true,
-    nodeSeparation: 75,
-  }
-});
-
-// --- Selection / highlight handling ---
-let selectedId = null;
+// --- State for highlight / filter ---
 let searchTerm = "";
-
-function applyFilters() {
-  const q = searchTerm.trim().toLowerCase();
-  cy.batch(() => {
-    cy.nodes().forEach(n => {
-      const cat = n.data("category");
-      const labelMatch = !q || n.data("label").toLowerCase().includes(q);
-      const visible = visibleCats.has(cat) && labelMatch;
-      n.style("display", visible ? "element" : "none");
-    });
-    cy.edges().forEach(e => {
-      const s = e.source(), t = e.target();
-      const both = (s.style("display") !== "none") && (t.style("display") !== "none");
-      e.style("display", both ? "element" : "none");
-    });
-  });
-  if (selectedId) highlightSelection(selectedId);
-}
-
-function highlightSelection(id) {
-  const node = cy.getElementById(id);
-  if (!node || node.empty()) return;
-  cy.elements().removeClass("highlighted neighbor dimmed");
-  cy.elements().addClass("dimmed");
-  node.removeClass("dimmed").addClass("highlighted");
-  const neighborhood = node.closedNeighborhood();
-  neighborhood.removeClass("dimmed");
-  neighborhood.nodes().not(node).addClass("neighbor");
-  node.connectedEdges().addClass("highlighted").removeClass("dimmed");
-  renderDetail(node);
-}
-
-function clearSelection() {
-  selectedId = null;
-  cy.elements().removeClass("highlighted neighbor dimmed");
-  document.getElementById("detail").style.display = "none";
-  document.getElementById("detail-empty").style.display = "block";
-}
-
-cy.on("tap", "node", evt => {
-  selectedId = evt.target.id();
-  highlightSelection(selectedId);
+let hoveredNode = null;
+let highlightedIds = new Set();
+let selectedNode = null;
+let neighborsByNode = new Map();
+DATA.nodes.forEach(n => neighborsByNode.set(n.id, new Set()));
+DATA.links.forEach(l => {
+  neighborsByNode.get(l.source).add(l.target);
+  neighborsByNode.get(l.target).add(l.source);
 });
 
-cy.on("tap", evt => {
-  if (evt.target === cy) clearSelection();
+function nodeVisible(node) {
+  if (hiddenCats.has(node.category)) return false;
+  if (searchTerm) {
+    return node.label.toLowerCase().includes(searchTerm);
+  }
+  return true;
+}
+
+function nodeRadius(n) {
+  return 3 + Math.sqrt((n.n_papers || 0) + 1) * 2;
+}
+
+function dimColor(hex) {
+  // Convert hex (possibly 8-digit) to rgba with low alpha.
+  let h = hex.replace("#", "");
+  if (h.length === 8) h = h.slice(0, 6);
+  const r = parseInt(h.slice(0, 2), 16);
+  const g = parseInt(h.slice(2, 4), 16);
+  const b = parseInt(h.slice(4, 6), 16);
+  return `rgba(${r},${g},${b},0.12)`;
+}
+
+// --- Force-graph init ---
+const Graph = ForceGraph()
+  (document.getElementById("graph"))
+  .graphData(DATA)
+  .backgroundColor("#1a1a1a")
+  .nodeId("id")
+  .nodeRelSize(1)
+  .nodeVal(n => Math.pow(nodeRadius(n), 2))
+  .linkColor(link => {
+    if (highlightedIds.size > 0) {
+      const s = typeof link.source === "object" ? link.source.id : link.source;
+      const t = typeof link.target === "object" ? link.target.id : link.target;
+      if (highlightedIds.has(s) && highlightedIds.has(t)) {
+        return "rgba(255,255,255,0.5)";
+      }
+      return "rgba(255,255,255,0.04)";
+    }
+    return "rgba(255,255,255,0.13)";
+  })
+  .linkWidth(link => 0.5 + Math.min(link.weight, 6) * 0.45)
+  .cooldownTime(Infinity)
+  .d3AlphaDecay(0.012)
+  .d3VelocityDecay(0.35)
+  .warmupTicks(40)
+  .nodeCanvasObject((node, ctx, globalScale) => {
+    if (!nodeVisible(node)) return;
+    const r = nodeRadius(node);
+    const isHovered = node.id === (hoveredNode && hoveredNode.id);
+    const isSelected = node.id === (selectedNode && selectedNode.id);
+    const isDimmed = highlightedIds.size > 0 && !highlightedIds.has(node.id);
+
+    // Body
+    ctx.beginPath();
+    ctx.arc(node.x, node.y, r, 0, 2 * Math.PI, false);
+    ctx.fillStyle = isDimmed ? dimColor(node.color) : node.color;
+    ctx.fill();
+
+    // Border
+    if (isHovered || isSelected) {
+      ctx.lineWidth = 2 / globalScale;
+      ctx.strokeStyle = "#ffffff";
+      ctx.stroke();
+    } else if (!isDimmed) {
+      ctx.lineWidth = 0.5 / globalScale;
+      ctx.strokeStyle = "#00000080";
+      ctx.stroke();
+    }
+
+    // Label — show when zoomed in, or when this node is highlighted
+    const showLabel = isHovered || isSelected ||
+                      (highlightedIds.size > 0 && highlightedIds.has(node.id)) ||
+                      globalScale > 1.6;
+    if (showLabel && !isDimmed) {
+      const fontSize = Math.max(9, 11 / globalScale);
+      ctx.font = `${fontSize}px -apple-system, sans-serif`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "top";
+      ctx.strokeStyle = "#1a1a1a";
+      ctx.lineWidth = 3 / globalScale;
+      ctx.strokeText(node.label, node.x, node.y + r + 1);
+      ctx.fillStyle = (isHovered || isSelected) ? "#ffffff" : "#bbbbbb";
+      ctx.fillText(node.label, node.x, node.y + r + 1);
+    }
+  })
+  .nodePointerAreaPaint((node, color, ctx) => {
+    if (!nodeVisible(node)) return;
+    const r = nodeRadius(node) + 2;
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(node.x, node.y, r, 0, 2 * Math.PI, false);
+    ctx.fill();
+  })
+  .onNodeHover(node => {
+    hoveredNode = node;
+    if (node && !selectedNode) {
+      highlightedIds = new Set([node.id, ...neighborsByNode.get(node.id)]);
+    } else if (!selectedNode) {
+      highlightedIds = new Set();
+    }
+    document.body.style.cursor = node ? "pointer" : null;
+  })
+  .onNodeClick(node => {
+    if (selectedNode && selectedNode.id === node.id) {
+      // Deselect + unfreeze
+      delete selectedNode.fx; delete selectedNode.fy;
+      selectedNode = null;
+      highlightedIds = hoveredNode ? new Set([hoveredNode.id, ...neighborsByNode.get(hoveredNode.id)]) : new Set();
+      hideDetail();
+    } else {
+      // Unfreeze old selection
+      if (selectedNode) { delete selectedNode.fx; delete selectedNode.fy; }
+      selectedNode = node;
+      // Pin in current position to stop drift
+      node.fx = node.x;
+      node.fy = node.y;
+      highlightedIds = new Set([node.id, ...neighborsByNode.get(node.id)]);
+      showDetail(node);
+    }
+    Graph.d3ReheatSimulation();
+  })
+  .onBackgroundClick(() => {
+    if (selectedNode) {
+      delete selectedNode.fx; delete selectedNode.fy;
+      selectedNode = null;
+      hideDetail();
+    }
+    highlightedIds = new Set();
+  });
+
+// --- Force tuning sliders ---
+Graph.d3Force("charge").strength(-150);
+Graph.d3Force("link").distance(80).strength(0.4);
+Graph.d3Force("center", d3.forceCenter().strength(0.03));
+Graph.d3Force("collision", d3.forceCollide(n => nodeRadius(n) + 1));
+
+const f = {
+  center: document.getElementById("f-center"),
+  repel:  document.getElementById("f-repel"),
+  link:   document.getElementById("f-link"),
+  dist:   document.getElementById("f-dist"),
+};
+const fv = {
+  center: document.getElementById("f-center-v"),
+  repel:  document.getElementById("f-repel-v"),
+  link:   document.getElementById("f-link-v"),
+  dist:   document.getElementById("f-dist-v"),
+};
+f.center.addEventListener("input", e => {
+  const v = +e.target.value / 100;
+  fv.center.textContent = v.toFixed(2);
+  Graph.d3Force("center").strength(v);
+  Graph.d3ReheatSimulation();
+});
+f.repel.addEventListener("input", e => {
+  const v = +e.target.value;
+  fv.repel.textContent = v;
+  Graph.d3Force("charge").strength(-v);
+  Graph.d3ReheatSimulation();
+});
+f.link.addEventListener("input", e => {
+  const v = +e.target.value / 100;
+  fv.link.textContent = v.toFixed(2);
+  Graph.d3Force("link").strength(v);
+  Graph.d3ReheatSimulation();
+});
+f.dist.addEventListener("input", e => {
+  const v = +e.target.value;
+  fv.dist.textContent = v;
+  Graph.d3Force("link").distance(v);
+  Graph.d3ReheatSimulation();
+});
+
+// --- Search ---
+document.getElementById("search").addEventListener("input", e => {
+  searchTerm = e.target.value.trim().toLowerCase();
+  Graph.refresh();
 });
 
 // --- Detail panel ---
-function renderDetail(node) {
-  const d = node.data();
+const panelEl = document.getElementById("detail-panel");
+const detailEl = document.getElementById("detail");
+document.getElementById("detail-close").addEventListener("click", () => {
+  if (selectedNode) { delete selectedNode.fx; delete selectedNode.fy; }
+  selectedNode = null;
+  highlightedIds = new Set();
+  hideDetail();
+});
+
+function hideDetail() { panelEl.classList.remove("visible"); }
+
+function showDetail(node) {
   const html = [];
-  html.push(`<h2>${escapeHtml(d.label)}</h2>`);
-  if (d.lab) {
-    html.push(`<div class="role">${escapeHtml(d.lab.replace(/-/g, " "))}</div>`);
+  html.push(`<h2>${escapeHtml(node.label)}</h2>`);
+  if (node.lab) {
+    html.push(`<div class="lab-row">${escapeHtml(node.lab.replace(/-/g, " "))}</div>`);
   }
-  if (d.n_papers) {
-    html.push(`<div class="field"><span class="key">Papers in wiki</span><span class="val">${d.n_papers}</span></div>`);
+  if (node.n_papers) {
+    html.push(`<div class="field"><span class="key">Papers in wiki</span><span>${node.n_papers}</span></div>`);
   }
 
-  // Co-authors list
-  const neighbors = node.neighborhood("node").not(node);
+  // Co-authors
+  const neighbors = [...neighborsByNode.get(node.id)];
   if (neighbors.length > 0) {
+    const linkByPair = new Map();
+    DATA.links.forEach(l => {
+      const s = typeof l.source === "object" ? l.source.id : l.source;
+      const t = typeof l.target === "object" ? l.target.id : l.target;
+      if (s === node.id) linkByPair.set(t, l.weight);
+      else if (t === node.id) linkByPair.set(s, l.weight);
+    });
+    const items = neighbors.map(id => {
+      const n = DATA.nodes.find(x => x.id === id);
+      return { node: n, weight: linkByPair.get(id) || 1 };
+    }).sort((a, b) => b.weight - a.weight);
+
     html.push(`<div class="coauthors-list">`);
     html.push(`<div class="section-title" style="margin-top:0">Co-authors (${neighbors.length})</div>`);
-    const items = neighbors.map(n => {
-      const edge = node.edgesWith(n);
-      const w = edge.length ? edge.data("weight") : 1;
-      return { node: n, weight: w };
-    }).sort((a, b) => b.weight - a.weight);
     items.forEach(({ node: n, weight }) => {
-      const nd = n.data();
-      html.push(`<div class="item" data-id="${n.id()}">
-        <span><span class="swatch" style="background:${nd.color}"></span>${escapeHtml(nd.label)}</span>
-        <span class="papers">${weight} paper${weight === 1 ? "" : "s"}</span>
+      html.push(`<div class="coauthor-item" data-id="${n.id}">
+        <span><span class="swatch" style="background:${n.color}"></span>${escapeHtml(n.label)}</span>
+        <span class="papers">${weight}</span>
       </div>`);
     });
     html.push(`</div>`);
   }
 
-  const detailEl = document.getElementById("detail");
   detailEl.innerHTML = html.join("");
-  detailEl.style.display = "block";
-  document.getElementById("detail-empty").style.display = "none";
-  // wire up co-author clicks
-  detailEl.querySelectorAll(".item").forEach(item => {
-    item.addEventListener("click", () => {
-      const targetId = item.dataset.id;
-      selectedId = targetId;
-      cy.center(cy.getElementById(targetId));
-      highlightSelection(targetId);
+  panelEl.classList.add("visible");
+  detailEl.querySelectorAll(".coauthor-item").forEach(el => {
+    el.addEventListener("click", () => {
+      const id = el.dataset.id;
+      const n = DATA.nodes.find(x => x.id === id);
+      if (n) {
+        if (selectedNode) { delete selectedNode.fx; delete selectedNode.fy; }
+        selectedNode = n;
+        n.fx = n.x; n.fy = n.y;
+        highlightedIds = new Set([n.id, ...neighborsByNode.get(n.id)]);
+        Graph.centerAt(n.x, n.y, 600);
+        Graph.d3ReheatSimulation();
+        showDetail(n);
+      }
     });
   });
 }
@@ -628,16 +746,12 @@ function escapeHtml(s) {
   }[c]));
 }
 
-// --- Search ---
-document.getElementById("search").addEventListener("input", e => {
-  searchTerm = e.target.value;
-  applyFilters();
-});
+// Resize handler
+window.addEventListener("resize", () => Graph.width(window.innerWidth).height(window.innerHeight));
+Graph.width(window.innerWidth).height(window.innerHeight);
 
-// Center view after layout settles.
-cy.ready(() => {
-  setTimeout(() => cy.fit(undefined, 30), 200);
-});
+// Zoom to fit after initial settle.
+setTimeout(() => Graph.zoomToFit(800, 60), 1500);
 </script>
 </body>
 </html>
