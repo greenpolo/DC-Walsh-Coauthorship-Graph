@@ -129,31 +129,20 @@ def build_graph_data() -> dict[str, Any]:
         if not isinstance(title, str):
             title = str(title)
         lab = strip_lab_wikilink(fm.get("lab", ""))
-        affiliation = str(fm.get("affiliation", "") or "")
-        role = str(fm.get("role", "") or "")
-        h_index = fm.get("h_index", "")
-        cited_by_count = fm.get("cited_by_count", "")
-        orcid = fm.get("orcid", "")
         sources_list = fm.get("sources", []) or []
         if not isinstance(sources_list, list):
             sources_list = []
         n_papers = len(sources_list)
-        tags = fm.get("tags", []) or []
-        if not isinstance(tags, list):
-            tags = []
         color, category = classify_node_color(fm)
 
+        # Minimal public payload: name, lab (for color/filter), paper count (for sizing).
+        # Affiliation / role / h-index / citation count / ORCID / tags are intentionally
+        # excluded from the published HTML — names + connections only.
         nodes[basename] = {
             "id": basename,
             "label": title,
             "lab": lab,
-            "affiliation": affiliation,
-            "role": role,
-            "h_index": h_index if h_index != "" else None,
-            "cited_by_count": cited_by_count if cited_by_count != "" else None,
-            "orcid": orcid if orcid else None,
             "n_papers": n_papers,
-            "tags": tags,
             "color": color,
             "category": category,
         }
@@ -191,13 +180,7 @@ def build_graph_data() -> dict[str, Any]:
                 "id": ref,
                 "label": ref.replace("-", " "),
                 "lab": "",
-                "affiliation": "(no wiki page)",
-                "role": "",
-                "h_index": None,
-                "cited_by_count": None,
-                "orcid": None,
                 "n_papers": 0,
-                "tags": [],
                 "color": MISSING_PAGE_COLOR,
                 "category": "Missing page",
             }
@@ -597,20 +580,12 @@ function renderDetail(node) {
   const d = node.data();
   const html = [];
   html.push(`<h2>${escapeHtml(d.label)}</h2>`);
-  if (d.role || d.lab) {
-    const role = d.role || "";
-    const lab = d.lab ? ` · ${escapeHtml(d.lab.replace(/-/g, " "))}` : "";
-    html.push(`<div class="role">${escapeHtml(role)}${lab}</div>`);
+  if (d.lab) {
+    html.push(`<div class="role">${escapeHtml(d.lab.replace(/-/g, " "))}</div>`);
   }
-  const fieldRows = [];
-  if (d.affiliation) fieldRows.push(["Affiliation", d.affiliation]);
-  if (d.n_papers) fieldRows.push(["Papers in wiki", d.n_papers]);
-  if (d.h_index) fieldRows.push(["h-index", d.h_index]);
-  if (d.cited_by_count) fieldRows.push(["Citations", d.cited_by_count.toLocaleString()]);
-  if (d.orcid) fieldRows.push(["ORCID", d.orcid]);
-  fieldRows.forEach(([k, v]) => {
-    html.push(`<div class="field"><span class="key">${k}</span><span class="val">${escapeHtml(String(v))}</span></div>`);
-  });
+  if (d.n_papers) {
+    html.push(`<div class="field"><span class="key">Papers in wiki</span><span class="val">${d.n_papers}</span></div>`);
+  }
 
   // Co-authors list
   const neighbors = node.neighborhood("node").not(node);
