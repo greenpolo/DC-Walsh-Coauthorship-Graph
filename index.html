@@ -434,9 +434,10 @@ const Graph = ForceGraph()
                       (highlightedIds.size > 0 && highlightedIds.has(node.id)) ||
                       globalScale > labelThreshold;
     if (showLabel && !isDimmed) {
-      // Quadratic scaling with no floor: shrinks rapidly on zoom-out,
-      // grows rapidly on zoom-in. Capped at 80 screen px.
-      const screenPx = Math.min(80, Math.pow(globalScale, 2) * 4);
+      // Quadratic scaling with no floor. Cap + multiplier scale with
+      // viewport width so phone screens get proportionally smaller text.
+      const vw = Math.min(1, window.innerWidth / 1200);
+      const screenPx = Math.min(80 * vw, Math.pow(globalScale, 2) * 4 * vw);
       const fontSize = screenPx / globalScale;
       ctx.font = `${fontSize}px -apple-system, sans-serif`;
       ctx.textAlign = "center";
