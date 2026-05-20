@@ -99,71 +99,94 @@ def classify_node_color(fm: dict[str, Any]) -> tuple[str, str]:
 
 
 def build_graph_data() -> dict[str, Any]:
-    nodes: dict[str, dict[str, Any]] = {}
-    edge_weights: dict[tuple[str, str], int] = {}
-    sources_seen: set[str] = set()
-
+    # Pass 1: parse every person page, collect metadata + raw co-author blocks.
+    people: dict[str, dict[str, Any]] = {}
     for path in sorted(PEOPLE_DIR.glob("*.md")):
         basename = path.stem
         text = path.read_text(encoding="utf-8")
         fm, body = parse_frontmatter(text)
-
         title = fm.get("title", basename.replace("-", " "))
         if not isinstance(title, str):
             title = str(title)
         lab = strip_lab_wikilink(fm.get("lab", ""))
-        sources_list = fm.get("sources", []) or []
-        if not isinstance(sources_list, list):
-            sources_list = []
-        n_papers = len(sources_list)
         color, category = classify_node_color(fm)
-
-        # Minimal public payload: name, lab (for color/filter), paper count (for sizing).
-        # Affiliation / role / h-index / citation count / ORCID / tags are intentionally
-        # excluded from the published HTML — names + connections only.
-        nodes[basename] = {
-            "id": basename,
-            "label": title,
+        blocks = parse_coauthor_blocks(body)
+        people[basename] = {
+            "title": title,
             "lab": lab,
-            "n_papers": n_papers,
             "color": color,
             "category": category,
+            "blocks": blocks,
         }
 
-        for source, coauthors in parse_coauthor_blocks(body):
-            sources_seen.add(source)
+    # Build source -> set(author basenames) by unioning each person's blocks.
+    source_authors: dict[str, set[str]] = {}
+    for basename, info in people.items():
+        for source, coauthors in info["blocks"]:
+            authors = source_authors.setdefault(source, set())
+            authors.add(basename)
+            for ca in coauthors:
+                authors.add(ca)
+
+    # Keep only sources with at least one Walsh- or Christoffel-lab author.
+    home_lab_members = {b for b, info in people.items() if info["lab"] in PRIMARY_LAB_COLORS}
+    kept_sources = {s for s, authors in source_authors.items() if authors & home_lab_members}
+
+    # Rebuild edges from kept sources only, and tally per-author paper counts.
+    edge_weights: dict[tuple[str, str], int] = {}
+    n_papers_per: dict[str, int] = {}
+    for basename, info in people.items():
+        for source, coauthors in info["blocks"]:
+            if source not in kept_sources:
+                continue
+            n_papers_per[basename] = n_papers_per.get(basename, 0) + 1
             for ca in coauthors:
                 if ca == basename:
                     continue
                 a, b = sorted([basename, ca])
                 edge_weights[(a, b)] = edge_weights.get((a, b), 0) + 1
+    # Author counts for missing-page stubs come from the same source loop, but
+    # via membership in source_authors (their own page didn't supply blocks).
+    for s in kept_sources:
+        for author in source_authors[s]:
+            if author not in people:
+                n_papers_per[author] = n_papers_per.get(author, 0) + 1
 
-    # Each true co-authorship contributes 2 directed mentions (one on each end's page).
-    # Compute approximate "papers in common" = ceil(weight / 2).
-    cy_edges = []
-    for (a, b), w in edge_weights.items():
-        papers_shared = max(1, (w + 1) // 2)
-        cy_edges.append({
-            "source": a,
-            "target": b,
-            "weight": papers_shared,
-        })
-
-    # Stub nodes for wikilinks referenced but missing a page.
-    referenced: set[str] = set()
+    # Determine which nodes survive: anyone with an edge, plus all home-lab members.
+    connected: set[str] = set()
     for (a, b) in edge_weights:
-        referenced.add(a)
-        referenced.add(b)
-    for ref in referenced:
-        if ref not in nodes:
-            nodes[ref] = {
-                "id": ref,
-                "label": ref.replace("-", " "),
+        connected.add(a)
+        connected.add(b)
+    keep_nodes = connected | home_lab_members
+
+    nodes: dict[str, dict[str, Any]] = {}
+    for basename in keep_nodes:
+        if basename in people:
+            info = people[basename]
+            nodes[basename] = {
+                "id": basename,
+                "label": info["title"],
+                "lab": info["lab"],
+                "n_papers": n_papers_per.get(basename, 0),
+                "color": info["color"],
+                "category": info["category"],
+            }
+        else:
+            nodes[basename] = {
+                "id": basename,
+                "label": basename.replace("-", " "),
                 "lab": "",
-                "n_papers": 0,
+                "n_papers": n_papers_per.get(basename, 0),
                 "color": MISSING_PAGE_COLOR,
                 "category": "Missing page",
             }
+
+    cy_edges = []
+    for (a, b), w in edge_weights.items():
+        if a not in nodes or b not in nodes:
+            continue
+        papers_shared = max(1, (w + 1) // 2)
+        cy_edges.append({"source": a, "target": b, "weight": papers_shared})
 
     cy_nodes = sorted(nodes.values(), key=lambda d: d["label"])
     return {
@@ -172,7 +195,7 @@ def build_graph_data() -> dict[str, Any]:
         "stats": {
             "n_nodes": len(cy_nodes),
             "n_edges": len(cy_edges),
-            "n_sources": len(sources_seen),
+            "n_sources": len(kept_sources),
         },
         "palette": {
             **PRIMARY_LAB_COLORS,
@@ -211,22 +234,22 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     background: var(--panel);
     backdrop-filter: blur(8px);
     border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 14px;
-    font-size: 13px;
+    border-radius: 6px;
+    padding: 9px 10px;
+    font-size: 11px;
     z-index: 10;
   }
   .panel.left {
-    top: 16px; left: 16px;
-    width: 260px;
-    max-height: calc(100vh - 32px);
+    top: 12px; left: 12px;
+    width: 188px;
+    max-height: calc(100vh - 24px);
     overflow-y: auto;
     transition: width 0.18s ease, padding 0.18s ease, max-height 0.18s ease;
   }
   .panel.left.collapsed {
-    width: 44px;
-    height: 44px;
-    max-height: 44px;
+    width: 36px;
+    height: 36px;
+    max-height: 36px;
     padding: 0;
     overflow: hidden;
     cursor: pointer;
@@ -234,16 +257,16 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   .panel.left.collapsed > *:not(.panel-toggle) { display: none; }
   .panel-toggle {
     position: absolute;
-    top: 8px; right: 8px;
-    width: 28px; height: 28px;
+    top: 5px; right: 5px;
+    width: 24px; height: 24px;
     border: none;
     background: transparent;
     color: var(--text-dim);
     cursor: pointer;
-    font-size: 16px;
+    font-size: 14px;
     padding: 0;
     line-height: 1;
-    border-radius: 4px;
+    border-radius: 3px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -268,28 +291,28 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     .help { display: none; }
   }
   h1 {
-    margin: 0 0 2px 0;
-    font-size: 15px;
+    margin: 0 0 1px 0;
+    font-size: 12px;
     font-weight: 600;
     letter-spacing: 0.2px;
   }
-  .subtitle { color: var(--text-dim); font-size: 11px; margin-bottom: 12px; }
+  .subtitle { color: var(--text-dim); font-size: 9px; margin-bottom: 8px; }
   .stats {
     color: var(--text-dim);
-    font-size: 11px;
-    line-height: 1.5;
-    padding-bottom: 10px;
+    font-size: 9px;
+    line-height: 1.45;
+    padding-bottom: 7px;
     border-bottom: 1px solid var(--border);
-    margin-bottom: 10px;
+    margin-bottom: 7px;
   }
   .stats b { color: var(--text); }
   .section-title {
     text-transform: uppercase;
-    letter-spacing: 0.08em;
-    font-size: 10px;
+    letter-spacing: 0.06em;
+    font-size: 8.5px;
     color: var(--text-dim);
-    margin-top: 14px;
-    margin-bottom: 6px;
+    margin-top: 9px;
+    margin-bottom: 4px;
     font-weight: 600;
   }
   input[type="text"] {
@@ -297,19 +320,19 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     background: #181818;
     border: 1px solid var(--border);
     color: var(--text);
-    padding: 5px 8px;
-    border-radius: 4px;
-    font-size: 12px;
+    padding: 3px 6px;
+    border-radius: 3px;
+    font-size: 10.5px;
     outline: none;
   }
   input[type="text"]:focus { border-color: var(--accent); }
   .slider-row {
     display: grid;
-    grid-template-columns: 80px 1fr 40px;
-    gap: 6px;
+    grid-template-columns: 60px 1fr 34px;
+    gap: 5px;
     align-items: center;
-    margin-bottom: 4px;
-    font-size: 11px;
+    margin-bottom: 3px;
+    font-size: 10px;
   }
   .slider-row label { color: var(--text-dim); }
   .slider-row .value { color: var(--text); text-align: right; font-variant-numeric: tabular-nums; }
@@ -341,8 +364,8 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   #legend li {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 4px 6px;
+    gap: 6px;
+    padding: 2px 4px;
     cursor: pointer;
     border-radius: 3px;
     user-select: none;
@@ -350,12 +373,12 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   #legend li:hover { background: #ffffff10; }
   #legend li.disabled { opacity: 0.3; }
   #legend li .swatch {
-    width: 11px; height: 11px; border-radius: 50%;
+    width: 9px; height: 9px; border-radius: 50%;
     border: 1px solid #00000060;
     flex-shrink: 0;
   }
-  #legend li .label { flex: 1; font-size: 11px; }
-  #legend li .count { color: var(--text-dim); font-size: 10px; }
+  #legend li .label { flex: 1; font-size: 10px; }
+  #legend li .count { color: var(--text-dim); font-size: 9px; }
   .detail h2 { margin: 0 0 4px 0; font-size: 15px; font-weight: 600; }
   .detail .lab-row { color: var(--text-dim); font-size: 11px; margin-bottom: 10px; }
   .detail .field {
@@ -368,6 +391,25 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     padding-top: 10px;
     border-top: 1px solid var(--border);
   }
+  .detail .coauthors-list > summary {
+    list-style: none;
+    cursor: pointer;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-size: 9px;
+    color: var(--text-dim);
+    font-weight: 600;
+    user-select: none;
+    padding: 2px 0;
+  }
+  .detail .coauthors-list > summary::-webkit-details-marker { display: none; }
+  .detail .coauthors-list > summary::before {
+    content: "▸ ";
+    display: inline-block;
+    transition: transform 0.15s ease;
+  }
+  .detail .coauthors-list[open] > summary::before { content: "▾ "; }
+  .detail .coauthors-list > .items { margin-top: 6px; }
   .coauthor-item {
     display: flex;
     justify-content: space-between;
@@ -512,6 +554,9 @@ let highlightedIds = new Set();
 let selectedNode = null;
 let labelThreshold = 1.6;
 let suppressClick = false;
+// On touch-primary devices, finger-brushes fire spurious hover events
+// during pans. Disable hover highlighting there — clicks still work.
+const isTouchPrimary = window.matchMedia && window.matchMedia("(hover: none)").matches;
 let neighborsByNode = new Map();
 DATA.nodes.forEach(n => neighborsByNode.set(n.id, new Set()));
 DATA.links.forEach(l => {
@@ -528,7 +573,9 @@ function nodeVisible(node) {
 }
 
 function nodeRadius(n) {
-  return 3 + Math.sqrt((n.n_papers || 0) + 1) * 2;
+  // Linear floor of 2 plus a sqrt-scaled body — keeps stubs visible while
+  // giving 20-paper nodes ~3x the radius of 1-paper nodes (vs. ~2x before).
+  return 2 + Math.sqrt(n.n_papers || 0) * 1.6;
 }
 
 function dimColor(hex) {
@@ -594,8 +641,8 @@ const Graph = ForceGraph()
                       (highlightedIds.size > 0 && highlightedIds.has(node.id)) ||
                       globalScale > labelThreshold;
     if (showLabel && !isDimmed) {
-      // Scale label with zoom: 5px nominal world-size; clamp screen-space to 8..28px.
-      const screenPx = Math.max(8, Math.min(28, 5 * globalScale));
+      // Aggressive zoom scaling: superlinear growth, clamped 8..72 screen px.
+      const screenPx = Math.max(8, Math.min(72, Math.pow(globalScale, 1.5) * 7));
       const fontSize = screenPx / globalScale;
       ctx.font = `${fontSize}px -apple-system, sans-serif`;
       ctx.textAlign = "center";
@@ -616,6 +663,7 @@ const Graph = ForceGraph()
     ctx.fill();
   })
   .onNodeHover(node => {
+    if (isTouchPrimary) return;
     hoveredNode = node;
     if (node && !selectedNode) {
       highlightedIds = new Set([node.id, ...neighborsByNode.get(node.id)]);
@@ -767,15 +815,16 @@ function showDetail(node) {
       return { node: n, weight: linkByPair.get(id) || 1 };
     }).sort((a, b) => b.weight - a.weight);
 
-    html.push(`<div class="coauthors-list">`);
-    html.push(`<div class="section-title" style="margin-top:0">Co-authors (${neighbors.length})</div>`);
+    html.push(`<details class="coauthors-list">`);
+    html.push(`<summary>Co-authors (${neighbors.length})</summary>`);
+    html.push(`<div class="items">`);
     items.forEach(({ node: n, weight }) => {
       html.push(`<div class="coauthor-item" data-id="${n.id}">
         <span><span class="swatch" style="background:${n.color}"></span>${escapeHtml(n.label)}</span>
         <span class="papers">${weight}</span>
       </div>`);
     });
-    html.push(`</div>`);
+    html.push(`</div></details>`);
   }
 
   detailEl.innerHTML = html.join("");
