@@ -209,7 +209,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<title>Walsh + Christoffel Lab Co-authorship Graph</title>
+<title>DC-Walsh Labs Co-authorship Graph</title>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <style>
   :root {
@@ -463,7 +463,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 
 <aside class="panel left" id="settings-panel">
   <button class="panel-toggle" id="settings-toggle" title="Toggle settings" aria-label="Toggle settings">☰</button>
-  <h1>Walsh + Christoffel</h1>
+  <h1>DC-Walsh Labs</h1>
   <div class="subtitle">Co-authorship network</div>
   <div class="stats" id="stats"></div>
 
