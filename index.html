@@ -390,13 +390,15 @@ const Graph = ForceGraph()
   .nodeRelSize(1)
   .nodeVal(n => Math.pow(nodeRadius(n), 2))
   .linkColor(link => {
-    if (highlightedIds.size > 0) {
+    // When a node is focused, only edges touching it light up (direct connections only).
+    const focal = selectedNode || hoveredNode;
+    if (focal) {
       const s = typeof link.source === "object" ? link.source.id : link.source;
       const t = typeof link.target === "object" ? link.target.id : link.target;
-      if (highlightedIds.has(s) && highlightedIds.has(t)) {
+      if (s === focal.id || t === focal.id) {
         return "rgba(255,255,255,0.5)";
       }
-      return "rgba(255,255,255,0.04)";
+      return "rgba(255,255,255,0.02)";
     }
     return "rgba(255,255,255,0.13)";
   })
