@@ -592,6 +592,7 @@ function dimColor(hex) {
 const Graph = ForceGraph()
   (document.getElementById("graph"))
   .graphData(DATA)
+  .enableNodeDrag(false)
   .backgroundColor("#1a1a1a")
   .nodeId("id")
   .nodeRelSize(1)
