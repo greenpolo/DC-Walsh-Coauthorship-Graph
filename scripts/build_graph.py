@@ -694,7 +694,6 @@ const Graph = ForceGraph()
       highlightedIds = new Set([node.id, ...neighborsByNode.get(node.id)]);
       showDetail(node);
     }
-    Graph.d3ReheatSimulation();
   })
   .onBackgroundClick(() => {
     if (suppressClick) { suppressClick = false; return; }
@@ -847,7 +846,6 @@ function showDetail(node) {
         n.fx = n.x; n.fy = n.y;
         highlightedIds = new Set([n.id, ...neighborsByNode.get(n.id)]);
         Graph.centerAt(n.x, n.y, 600);
-        Graph.d3ReheatSimulation();
         showDetail(n);
       }
     });
